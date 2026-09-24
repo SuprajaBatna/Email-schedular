@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { signOut, useSession } from 'next-auth/react';
 import { Mail, LogOut, ExternalLink, Slack, CheckCircle, AlertCircle } from 'lucide-react';
+import { API_BASE_URL } from '@/config/api';
 
 interface NavbarProps {
   onOpenCompose?: () => void;
@@ -15,7 +16,7 @@ export function Navbar({ onOpenCompose }: NavbarProps = {}) {
 
   useEffect(() => {
     // Check Slack connection status
-    fetch(`http://localhost:5000/api/slack/connect?userId=${userId}`, { method: 'HEAD' })
+    fetch(`${API_BASE_URL}/api/slack/connect?userId=${userId}`, { method: 'HEAD' })
       .then(() => setSlackConnected(false))
       .catch(() => setSlackConnected(false));
   }, [userId]);
@@ -38,7 +39,7 @@ export function Navbar({ onOpenCompose }: NavbarProps = {}) {
         <div className="flex items-center gap-4">
           {/* Bull Board Admin Dashboard Link */}
           <a
-            href="http://localhost:5000/admin/queues"
+            href={`${API_BASE_URL}/admin/queues`}
             target="_blank"
             rel="noopener noreferrer"
             className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
@@ -50,7 +51,7 @@ export function Navbar({ onOpenCompose }: NavbarProps = {}) {
 
           {/* Slack Connect Button / Status */}
           <a
-            href={`http://localhost:5000/api/slack/connect?userId=${userId}`}
+            href={`${API_BASE_URL}/api/slack/connect?userId=${userId}`}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition"
             title="Connect Slack for Rate Limit Alerts"
           >

@@ -24,10 +24,12 @@ exports.emailQueue = new bullmq_1.Queue(exports.QUEUE_NAME, {
 async function scheduleEmailJob(emailId, senderId, sendAt) {
     const now = Date.now();
     const scheduledTime = sendAt.getTime();
-    const delay = scheduledTime - now;
-    if (delay < 0) {
+    const rawDelay = scheduledTime - now;
+    // If scheduled time was more than 1 minute in the past, throw an error
+    if (rawDelay < -60000) {
         throw new Error('Scheduled time must be in the future.');
     }
+    const delay = Math.max(0, rawDelay);
     // Idempotency check: check if a job with this emailId already exists in BullMQ
     const existingJob = await exports.emailQueue.getJob(emailId);
     if (existingJob) {

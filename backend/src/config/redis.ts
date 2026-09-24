@@ -8,11 +8,13 @@ const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 export function getRedisConnectionOptions() {
   try {
     const parsed = new URL(redisUrl);
+    const isTls = parsed.protocol === 'rediss:';
     return {
       host: parsed.hostname || 'localhost',
-      port: parsed.port ? parseInt(parsed.port, 10) : 6379,
-      username: parsed.username || undefined,
-      password: parsed.password || undefined,
+      port: parsed.port ? parseInt(parsed.port, 10) : (isTls ? 6379 : 6379),
+      username: parsed.username ? decodeURIComponent(parsed.username) : undefined,
+      password: parsed.password ? decodeURIComponent(parsed.password) : undefined,
+      tls: isTls ? { rejectUnauthorized: false } : undefined,
       maxRetriesPerRequest: null, // Required by BullMQ
     };
   } catch {
@@ -27,6 +29,7 @@ export function getRedisConnectionOptions() {
 // Shared Redis client for atomic rate-limiting counters
 export const redisClient = new Redis(redisUrl, {
   maxRetriesPerRequest: null,
+  tls: redisUrl.startsWith('rediss://') ? { rejectUnauthorized: false } : undefined,
 });
 
 /**

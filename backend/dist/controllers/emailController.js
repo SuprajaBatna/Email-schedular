@@ -31,7 +31,7 @@ async function scheduleEmailController(req, res) {
                 error: 'Invalid scheduledAt timestamp format.',
             });
         }
-        if (sendAtDate.getTime() <= Date.now()) {
+        if (sendAtDate.getTime() < Date.now() - 60000) {
             return res.status(400).json({
                 success: false,
                 error: 'scheduledAt date must be in the future.',

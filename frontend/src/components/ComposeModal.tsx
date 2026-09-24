@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import Papa from 'papaparse';
 import { X, Upload, Send, Sparkles, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { API_BASE_URL } from '@/config/api';
 
 interface Sender {
   id: string;
@@ -45,7 +46,7 @@ export function ComposeModal({ isOpen, onClose, userId, onSuccess, onScheduled }
   // Fetch senders list from backend
   useEffect(() => {
     if (isOpen) {
-      fetch('http://localhost:5000/api/senders')
+      fetch(`${API_BASE_URL}/api/senders`)
         .then((res) => res.json())
         .then((data) => {
           if (data.senders && data.senders.length > 0) {
@@ -152,7 +153,7 @@ export function ComposeModal({ isOpen, onClose, userId, onSuccess, onScheduled }
         const recipient = detectedEmails[i];
         const staggeredScheduledAt = new Date(startTimestamp + i * delaySeconds * 1000).toISOString();
 
-        const res = await fetch('http://localhost:5000/api/emails/schedule', {
+        const res = await fetch(`${API_BASE_URL}/api/emails/schedule`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

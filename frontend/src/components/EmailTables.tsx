@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import useSWR from 'swr';
 import { Search, Clock, CheckCircle2, AlertTriangle, RefreshCw, Mail, ExternalLink, Inbox } from 'lucide-react';
+import { API_BASE_URL } from '@/config/api';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -33,8 +34,8 @@ export function EmailTables({ onOpenCompose }: EmailTablesProps = {}) {
   // Fetch emails with SWR polling every 3000ms
   const { data, error, isLoading, mutate } = useSWR(
     searchQuery.trim()
-      ? `http://localhost:5000/api/emails/search?q=${encodeURIComponent(searchQuery)}`
-      : `http://localhost:5000/api/emails?category=${activeTab}`,
+      ? `${API_BASE_URL}/api/emails/search?q=${encodeURIComponent(searchQuery)}`
+      : `${API_BASE_URL}/api/emails?category=${activeTab}`,
     fetcher,
     { refreshInterval: 3000 }
   );

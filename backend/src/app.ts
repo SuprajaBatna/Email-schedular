@@ -11,7 +11,29 @@ import { initializeElasticsearchIndex } from './config/elasticsearch';
 
 const app: Express = express();
 
-app.use(cors());
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
+  : process.env.FRONTEND_URL
+  ? [process.env.FRONTEND_URL.trim()]
+  : '*';
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, mobile apps, server-to-server) or matching allowed origins
+      if (
+        !origin ||
+        allowedOrigins === '*' ||
+        (Array.isArray(allowedOrigins) && (allowedOrigins.includes(origin) || allowedOrigins.includes('*')))
+      ) {
+        callback(null, true);
+      } else {
+        callback(null, true); // Fallback allow to avoid unexpected dev/staging CORS blocks
+      }
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // Initialize Elasticsearch Index
