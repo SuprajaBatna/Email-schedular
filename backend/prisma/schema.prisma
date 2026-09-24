@@ -1,0 +1,83 @@
+// Prisma schema for ReachInbox Email Scheduler
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmailStatus {
+  pending
+  processing
+  sent
+  failed
+}
+
+model User {
+  id               String            @id @default(uuid())
+  googleId         String            @unique
+  name             String
+  email            String            @unique
+  avatar           String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  senders          Sender[]
+  emails           Email[]
+  slackIntegration SlackIntegration?
+}
+
+model Sender {
+  id            String   @id @default(uuid())
+  userId        String
+  label         String
+  etherealEmail String
+  etherealPass  String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emails Email[]
+
+  @@index([userId])
+}
+
+model Email {
+  id          String      @id @default(uuid())
+  userId      String
+  senderId    String
+  recipient   String
+  subject     String
+  body        String
+  scheduledAt DateTime
+  status      EmailStatus @default(pending)
+  sentAt      DateTime?
+  bullJobId   String?
+  failReason  String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender Sender @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([senderId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([bullJobId])
+}
+
+model SlackIntegration {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  teamId      String
+  accessToken String
+  webhookUrl  String
+  connectedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
