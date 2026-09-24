@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import useSWR from 'swr';
-import { Search, Clock, CheckCircle2, AlertTriangle, RefreshCw, Mail, ExternalLink, Inbox } from 'lucide-react';
+import { Search, Clock, CheckCircle2, AlertTriangle, RefreshCw, Mail, ExternalLink, Inbox, Ban, Loader2, AlertCircle } from 'lucide-react';
 import { API_BASE_URL } from '@/config/api';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -12,7 +12,7 @@ interface EmailRecord {
   recipient: string;
   subject: string;
   body: string;
-  status: 'pending' | 'processing' | 'sent' | 'failed';
+  status: 'pending' | 'processing' | 'sent' | 'failed' | 'cancelled';
   scheduledAt: string;
   sentAt?: string | null;
   failReason?: string | null;
@@ -30,6 +30,8 @@ interface EmailTablesProps {
 export function EmailTables({ onOpenCompose }: EmailTablesProps = {}) {
   const [activeTab, setActiveTab] = useState<'scheduled' | 'sent'>('scheduled');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Fetch emails with SWR polling every 3000ms
   const { data, error, isLoading, mutate } = useSWR(
@@ -40,6 +42,34 @@ export function EmailTables({ onOpenCompose }: EmailTablesProps = {}) {
     { refreshInterval: 3000 }
   );
 
+  const handleCancelEmail = async (emailId: string, recipient: string) => {
+    if (!window.confirm(`Are you sure you want to cancel the scheduled email to ${recipient}?`)) {
+      return;
+    }
+
+    setCancellingId(emailId);
+    setFeedbackMsg(null);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/emails/${emailId}/cancel`, {
+        method: 'DELETE',
+      });
+      const resData = await res.json();
+
+      if (res.ok && resData.success) {
+        setFeedbackMsg({ type: 'success', text: `Successfully cancelled email to ${recipient}.` });
+        await mutate(); // Automatically refresh scheduled list
+      } else {
+        setFeedbackMsg({ type: 'error', text: resData.error || 'Failed to cancel email.' });
+      }
+    } catch (err: any) {
+      setFeedbackMsg({ type: 'error', text: err?.message || 'Error occurred while cancelling email.' });
+    } finally {
+      setCancellingId(null);
+      setTimeout(() => setFeedbackMsg(null), 4000);
+    }
+  };
+
   const rawEmails: EmailRecord[] = data?.emails || [];
 
   // Filter by tab when not searching
@@ -48,7 +78,7 @@ export function EmailTables({ onOpenCompose }: EmailTablesProps = {}) {
     : rawEmails.filter((e) =>
         activeTab === 'scheduled'
           ? e.status === 'pending' || e.status === 'processing'
-          : e.status === 'sent' || e.status === 'failed'
+          : e.status === 'sent' || e.status === 'failed' || e.status === 'cancelled'
       );
 
   return (
@@ -108,6 +138,24 @@ export function EmailTables({ onOpenCompose }: EmailTablesProps = {}) {
           </button>
         </div>
       </div>
+
+      {/* Action Feedback Banner */}
+      {feedbackMsg && (
+        <div
+          className={`flex items-center gap-2 p-3.5 rounded-xl border text-xs font-medium ${
+            feedbackMsg.type === 'success'
+              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+              : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+          }`}
+        >
+          {feedbackMsg.type === 'success' ? (
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+          ) : (
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          )}
+          <span>{feedbackMsg.text}</span>
+        </div>
+      )}
 
       {/* Table Content */}
       <div className="rounded-2xl bg-slate-900/60 border border-slate-800 shadow-xl overflow-hidden backdrop-blur-md">
@@ -185,9 +233,34 @@ export function EmailTables({ onOpenCompose }: EmailTablesProps = {}) {
                           <span>Failed</span>
                         </span>
                       )}
+                      {email.status === 'cancelled' && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-500/10 border border-slate-500/20 text-slate-400 font-medium">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
+                          <span>Cancelled</span>
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      {email.failReason ? (
+                      {email.status === 'pending' ? (
+                        <button
+                          onClick={() => handleCancelEmail(email.id, email.recipient)}
+                          disabled={cancellingId === email.id}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 text-[11px] font-medium transition disabled:opacity-50"
+                          title="Cancel/Unschedule Email"
+                        >
+                          {cancellingId === email.id ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin" />
+                              <span>Cancelling...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Ban className="w-3 h-3" />
+                              <span>Cancel</span>
+                            </>
+                          )}
+                        </button>
+                      ) : email.failReason ? (
                         <span
                           className="text-rose-400 hover:underline cursor-pointer truncate max-w-[150px] inline-block"
                           title={email.failReason}
@@ -196,6 +269,8 @@ export function EmailTables({ onOpenCompose }: EmailTablesProps = {}) {
                         </span>
                       ) : email.status === 'sent' ? (
                         <span className="text-emerald-400/80 font-mono text-[10px]">Delivered</span>
+                      ) : email.status === 'cancelled' ? (
+                        <span className="text-slate-500 font-mono text-[10px]">Cancelled</span>
                       ) : (
                         <span className="text-slate-500 font-mono text-[10px]">Queued</span>
                       )}

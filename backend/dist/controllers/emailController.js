@@ -7,6 +7,7 @@ exports.scheduleEmailController = scheduleEmailController;
 exports.getEmailsController = getEmailsController;
 exports.getSendersController = getSendersController;
 exports.searchEmailsController = searchEmailsController;
+exports.cancelEmailController = cancelEmailController;
 const prisma_1 = __importDefault(require("../config/prisma"));
 const emailQueue_1 = require("../queues/emailQueue");
 const elasticsearchService_1 = require("../services/elasticsearchService");
@@ -139,7 +140,7 @@ async function getEmailsController(req, res) {
     try {
         const category = req.query.category || 'scheduled';
         const statusFilter = category === 'sent'
-            ? { in: ['sent', 'failed'] }
+            ? { in: ['sent', 'failed', 'cancelled'] }
             : { in: ['pending', 'processing'] };
         const emails = await prisma_1.default.email.findMany({
             where: {
@@ -214,6 +215,73 @@ async function searchEmailsController(req, res) {
         return res.status(500).json({
             success: false,
             error: 'An error occurred while executing search query.',
+        });
+    }
+}
+/**
+ * Controller to handle DELETE /api/emails/:id/cancel
+ * Atomically verifies the email is still pending, removes its BullMQ job, and sets DB status to 'cancelled'.
+ */
+async function cancelEmailController(req, res) {
+    try {
+        const { id } = req.params;
+        if (!id) {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required parameter: email id',
+            });
+        }
+        // 1. Fetch Email from database
+        const email = await prisma_1.default.email.findUnique({
+            where: { id },
+        });
+        if (!email) {
+            return res.status(404).json({
+                success: false,
+                error: `Email with ID ${id} not found.`,
+            });
+        }
+        // 2. Verify email is still pending (already sent, processing, or failed emails cannot be cancelled)
+        if (email.status !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                error: `Only pending scheduled emails can be cancelled. Current status is '${email.status}'.`,
+            });
+        }
+        // 3. Remove/cancel BullMQ job
+        await (0, emailQueue_1.cancelEmailJob)(email.id);
+        // 4. Update status in PostgreSQL to 'cancelled'
+        const updatedEmail = await prisma_1.default.email.update({
+            where: { id: email.id },
+            data: {
+                status: 'cancelled',
+                failReason: 'Cancelled by user before execution.',
+            },
+        });
+        // 5. Update Elasticsearch index
+        await (0, elasticsearchService_1.indexEmailInElasticsearch)({
+            id: updatedEmail.id,
+            userId: updatedEmail.userId,
+            senderId: updatedEmail.senderId,
+            recipient: updatedEmail.recipient,
+            subject: updatedEmail.subject,
+            body: updatedEmail.body,
+            status: 'cancelled',
+            scheduledAt: updatedEmail.scheduledAt,
+            createdAt: updatedEmail.createdAt,
+        });
+        console.log(`[Cancel Controller] Email ${email.id} successfully cancelled.`);
+        return res.status(200).json({
+            success: true,
+            message: 'Email dispatch successfully cancelled.',
+            email: updatedEmail,
+        });
+    }
+    catch (error) {
+        console.error('[Cancel Controller Error]:', error);
+        return res.status(500).json({
+            success: false,
+            error: 'An internal server error occurred while cancelling the email.',
         });
     }
 }

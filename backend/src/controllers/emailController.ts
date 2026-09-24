@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import prisma from '../config/prisma';
-import { scheduleEmailJob } from '../queues/emailQueue';
+import { scheduleEmailJob, cancelEmailJob } from '../queues/emailQueue';
 import { indexEmailInElasticsearch, searchEmailsInElasticsearch } from '../services/elasticsearchService';
 
 /**
@@ -149,7 +149,7 @@ export async function getEmailsController(req: Request, res: Response) {
 
     const statusFilter =
       category === 'sent'
-        ? { in: ['sent', 'failed'] as any[] }
+        ? { in: ['sent', 'failed', 'cancelled'] as any[] }
         : { in: ['pending', 'processing'] as any[] };
 
     const emails = await prisma.email.findMany({
@@ -229,6 +229,82 @@ export async function searchEmailsController(req: Request, res: Response) {
     return res.status(500).json({
       success: false,
       error: 'An error occurred while executing search query.',
+    });
+  }
+}
+
+/**
+ * Controller to handle DELETE /api/emails/:id/cancel
+ * Atomically verifies the email is still pending, removes its BullMQ job, and sets DB status to 'cancelled'.
+ */
+export async function cancelEmailController(req: Request, res: Response) {
+  try {
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required parameter: email id',
+      });
+    }
+
+    // 1. Fetch Email from database
+    const email = await prisma.email.findUnique({
+      where: { id },
+    });
+
+    if (!email) {
+      return res.status(404).json({
+        success: false,
+        error: `Email with ID ${id} not found.`,
+      });
+    }
+
+    // 2. Verify email is still pending (already sent, processing, or failed emails cannot be cancelled)
+    if (email.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        error: `Only pending scheduled emails can be cancelled. Current status is '${email.status}'.`,
+      });
+    }
+
+    // 3. Remove/cancel BullMQ job
+    await cancelEmailJob(email.id);
+
+    // 4. Update status in PostgreSQL to 'cancelled'
+    const updatedEmail = await prisma.email.update({
+      where: { id: email.id },
+      data: {
+        status: 'cancelled',
+        failReason: 'Cancelled by user before execution.',
+      },
+    });
+
+    // 5. Update Elasticsearch index
+    await indexEmailInElasticsearch({
+      id: updatedEmail.id,
+      userId: updatedEmail.userId,
+      senderId: updatedEmail.senderId,
+      recipient: updatedEmail.recipient,
+      subject: updatedEmail.subject,
+      body: updatedEmail.body,
+      status: 'cancelled',
+      scheduledAt: updatedEmail.scheduledAt,
+      createdAt: updatedEmail.createdAt,
+    });
+
+    console.log(`[Cancel Controller] Email ${email.id} successfully cancelled.`);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Email dispatch successfully cancelled.',
+      email: updatedEmail,
+    });
+  } catch (error) {
+    console.error('[Cancel Controller Error]:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'An internal server error occurred while cancelling the email.',
     });
   }
 }

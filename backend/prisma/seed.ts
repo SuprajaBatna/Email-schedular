@@ -25,23 +25,34 @@ async function main() {
 
   console.log(`Seeded Test User: ${testUser.email} (ID: ${testUser.id})`);
 
-  // Generate real Ethereal test accounts if needed for live testing (with robust fallback)
-  console.log('Generating Ethereal SMTP test accounts for test senders...');
-  let test1User = process.env.ETHEREAL_USER || 'sender1@ethereal.email';
-  let test1Pass = process.env.ETHEREAL_PASS || 'pass123';
-  let test2User = process.env.ETHEREAL_SENDER_2 || 'sender2@ethereal.email';
-  let test2Pass = process.env.ETHEREAL_PASS || 'pass123';
+  // Determine Ethereal SMTP sender credentials from environment variables or local dev test account generator
+  const isProd = process.env.NODE_ENV === 'production';
+  const hasEnvSmtp = Boolean(process.env.ETHEREAL_USER && process.env.ETHEREAL_PASS);
 
-  try {
-    const testAccount1 = await nodemailer.createTestAccount();
-    test1User = testAccount1.user;
-    test1Pass = testAccount1.pass;
+  let sender1User = process.env.ETHEREAL_SENDER_1 || process.env.ETHEREAL_USER || '';
+  let sender1Pass = process.env.ETHEREAL_PASS || '';
+  let sender2User = process.env.ETHEREAL_SENDER_2 || process.env.ETHEREAL_USER || '';
+  let sender2Pass = process.env.ETHEREAL_PASS || '';
 
-    const testAccount2 = await nodemailer.createTestAccount();
-    test2User = testAccount2.user;
-    test2Pass = testAccount2.pass;
-  } catch (err) {
-    console.warn('[Seed Warning] Could not dynamically generate Ethereal account, using default test credentials.');
+  if (hasEnvSmtp || isProd) {
+    console.log(`[Seed SMTP] Using configured environment SMTP credentials (User: ${process.env.ETHEREAL_USER}). Replacement test accounts will NOT be generated.`);
+  } else {
+    console.log('[Seed SMTP] Local development mode with missing SMTP environment variables. Generating dynamic Ethereal test accounts...');
+    try {
+      const testAccount1 = await nodemailer.createTestAccount();
+      sender1User = testAccount1.user;
+      sender1Pass = testAccount1.pass;
+
+      const testAccount2 = await nodemailer.createTestAccount();
+      sender2User = testAccount2.user;
+      sender2Pass = testAccount2.pass;
+    } catch (err) {
+      console.warn('[Seed Warning] Could not dynamically generate Ethereal test account, using fallback credentials.');
+      sender1User = sender1User || 'sender1@ethereal.email';
+      sender1Pass = sender1Pass || 'pass123';
+      sender2User = sender2User || 'sender2@ethereal.email';
+      sender2Pass = sender2Pass || 'pass123';
+    }
   }
 
   // 2. Seed Test Sender 1 idempotently
@@ -49,16 +60,16 @@ async function main() {
     where: { id: '00000000-0000-0000-0000-000000000002' },
     update: {
       label: 'Test Sender 1 (Ethereal)',
-      etherealEmail: test1User,
-      etherealPass: test1Pass,
+      etherealEmail: sender1User,
+      etherealPass: sender1Pass,
       userId: testUser.id,
     },
     create: {
       id: '00000000-0000-0000-0000-000000000002',
       userId: testUser.id,
       label: 'Test Sender 1 (Ethereal)',
-      etherealEmail: test1User,
-      etherealPass: test1Pass,
+      etherealEmail: sender1User,
+      etherealPass: sender1Pass,
     },
   });
 
@@ -69,16 +80,16 @@ async function main() {
     where: { id: '00000000-0000-0000-0000-000000000003' },
     update: {
       label: 'Test Sender 2 (Ethereal)',
-      etherealEmail: test2User,
-      etherealPass: test2Pass,
+      etherealEmail: sender2User,
+      etherealPass: sender2Pass,
       userId: testUser.id,
     },
     create: {
       id: '00000000-0000-0000-0000-000000000003',
       userId: testUser.id,
       label: 'Test Sender 2 (Ethereal)',
-      etherealEmail: test2User,
-      etherealPass: test2Pass,
+      etherealEmail: sender2User,
+      etherealPass: sender2Pass,
     },
   });
 

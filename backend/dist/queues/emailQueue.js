@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.emailQueue = exports.QUEUE_NAME = void 0;
 exports.scheduleEmailJob = scheduleEmailJob;
+exports.cancelEmailJob = cancelEmailJob;
 const bullmq_1 = require("bullmq");
 const redis_1 = require("../config/redis");
 exports.QUEUE_NAME = 'email-queue';
@@ -42,4 +43,21 @@ async function scheduleEmailJob(emailId, senderId, sendAt) {
     });
     console.log(`[BullMQ] Enqueued email job ${job.id} with delay ${delay}ms`);
     return job;
+}
+/**
+ * Removes/cancels a scheduled job from BullMQ queue if it exists.
+ */
+async function cancelEmailJob(emailId) {
+    try {
+        const job = await exports.emailQueue.getJob(emailId);
+        if (job) {
+            await job.remove();
+            console.log(`[BullMQ] Successfully removed job ${emailId} from queue.`);
+            return true;
+        }
+    }
+    catch (err) {
+        console.warn(`[BullMQ Warning] Failed to remove job ${emailId} from queue:`, err);
+    }
+    return false;
 }

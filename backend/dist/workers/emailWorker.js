@@ -11,6 +11,9 @@ const redis_1 = require("../config/redis");
 const prisma_1 = __importDefault(require("../config/prisma"));
 const slackService_1 = require("../services/slackService");
 const elasticsearchService_1 = require("../services/elasticsearchService");
+const smtpValidation_1 = require("../utils/smtpValidation");
+// Run safe SMTP configuration validation on worker startup
+(0, smtpValidation_1.validateSmtpConfig)();
 // Worker Concurrency from environment (default: 5)
 const workerConcurrency = parseInt(process.env.WORKER_CONCURRENCY || '5', 10) || 5;
 // Minimum Send Delay from environment (default: 2000 ms)
@@ -30,6 +33,15 @@ exports.emailWorker = new bullmq_1.Worker(emailQueue_1.QUEUE_NAME, async (job) =
     });
     if (!emailRecord) {
         console.error(`[Worker Error] Email record ${emailId} not found in database.`);
+        return;
+    }
+    // 1b. Guard against processing cancelled emails
+    if (emailRecord.status === 'cancelled') {
+        console.log(`[Worker] Email record ${emailId} is cancelled. Aborting processing and skipping execution.`);
+        return;
+    }
+    if (emailRecord.status !== 'pending' && emailRecord.status !== 'processing') {
+        console.log(`[Worker] Email record ${emailId} has status '${emailRecord.status}'. Aborting execution.`);
         return;
     }
     if (!emailRecord.sender) {
@@ -110,9 +122,11 @@ exports.emailWorker = new bullmq_1.Worker(emailQueue_1.QUEUE_NAME, async (job) =
         scheduledAt: emailRecord.scheduledAt,
         createdAt: emailRecord.createdAt,
     });
-    // 5. Create Nodemailer SMTP Transporter dynamically per sender
+    // 5. Create Nodemailer SMTP Transporter dynamically per sender (using env fallbacks if missing)
     try {
-        if (!sender.etherealEmail || !sender.etherealPass) {
+        const smtpUser = sender.etherealEmail || process.env.ETHEREAL_USER;
+        const smtpPass = sender.etherealPass || process.env.ETHEREAL_PASS;
+        if (!smtpUser || !smtpPass) {
             throw new Error(`Sender '${sender.label}' is missing Ethereal SMTP credentials.`);
         }
         const transporter = nodemailer_1.default.createTransport({
@@ -120,8 +134,8 @@ exports.emailWorker = new bullmq_1.Worker(emailQueue_1.QUEUE_NAME, async (job) =
             port: 587,
             secure: false, // 587 uses STARTTLS
             auth: {
-                user: sender.etherealEmail,
-                pass: sender.etherealPass,
+                user: smtpUser,
+                pass: smtpPass,
             },
         });
         // 6. Send Email via SMTP

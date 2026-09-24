@@ -58,3 +58,20 @@ export async function scheduleEmailJob(
   console.log(`[BullMQ] Enqueued email job ${job.id} with delay ${delay}ms`);
   return job;
 }
+
+/**
+ * Removes/cancels a scheduled job from BullMQ queue if it exists.
+ */
+export async function cancelEmailJob(emailId: string): Promise<boolean> {
+  try {
+    const job = await emailQueue.getJob(emailId);
+    if (job) {
+      await job.remove();
+      console.log(`[BullMQ] Successfully removed job ${emailId} from queue.`);
+      return true;
+    }
+  } catch (err) {
+    console.warn(`[BullMQ Warning] Failed to remove job ${emailId} from queue:`, err);
+  }
+  return false;
+}

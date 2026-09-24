@@ -6,4 +6,5 @@ const router = (0, express_1.Router)();
 router.post('/schedule', emailController_1.scheduleEmailController);
 router.get('/', emailController_1.getEmailsController);
 router.get('/search', emailController_1.searchEmailsController);
+router.delete('/:id/cancel', emailController_1.cancelEmailController);
 exports.default = router;

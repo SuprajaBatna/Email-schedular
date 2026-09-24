@@ -5,6 +5,10 @@ import { getRedisConnectionOptions, redisClient, getHourlyRateLimitKey } from '.
 import prisma from '../config/prisma';
 import { sendSlackRateLimitNotification } from '../services/slackService';
 import { indexEmailInElasticsearch } from '../services/elasticsearchService';
+import { validateSmtpConfig } from '../utils/smtpValidation';
+
+// Run safe SMTP configuration validation on worker startup
+validateSmtpConfig();
 
 // Worker Concurrency from environment (default: 5)
 const workerConcurrency = parseInt(process.env.WORKER_CONCURRENCY || '5', 10) || 5;
@@ -34,6 +38,17 @@ export const emailWorker = new Worker<EmailJobData>(
 
     if (!emailRecord) {
       console.error(`[Worker Error] Email record ${emailId} not found in database.`);
+      return;
+    }
+
+    // 1b. Guard against processing cancelled emails
+    if (emailRecord.status === 'cancelled') {
+      console.log(`[Worker] Email record ${emailId} is cancelled. Aborting processing and skipping execution.`);
+      return;
+    }
+
+    if (emailRecord.status !== 'pending' && emailRecord.status !== 'processing') {
+      console.log(`[Worker] Email record ${emailId} has status '${emailRecord.status}'. Aborting execution.`);
       return;
     }
 
@@ -133,9 +148,12 @@ export const emailWorker = new Worker<EmailJobData>(
       createdAt: emailRecord.createdAt,
     });
 
-    // 5. Create Nodemailer SMTP Transporter dynamically per sender
+    // 5. Create Nodemailer SMTP Transporter dynamically per sender (using env fallbacks if missing)
     try {
-      if (!sender.etherealEmail || !sender.etherealPass) {
+      const smtpUser = sender.etherealEmail || process.env.ETHEREAL_USER;
+      const smtpPass = sender.etherealPass || process.env.ETHEREAL_PASS;
+
+      if (!smtpUser || !smtpPass) {
         throw new Error(`Sender '${sender.label}' is missing Ethereal SMTP credentials.`);
       }
 
@@ -144,8 +162,8 @@ export const emailWorker = new Worker<EmailJobData>(
         port: 587,
         secure: false, // 587 uses STARTTLS
         auth: {
-          user: sender.etherealEmail,
-          pass: sender.etherealPass,
+          user: smtpUser,
+          pass: smtpPass,
         },
       });
 
